@@ -1,0 +1,370 @@
+---
+title: "Análisis de temperaturas de Argentina"
+subtitle: "Visualización de datos - Taller de Comunicación Estadística"
+author: "Guillermo Solovey"
+date: "6 de Sep 2022"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_depth: 2
+---
+
+```{=html}
+<style type="text/css">
+body{ /* Normal  */
+font-size: 12px;
+}
+td {  /* Table  */
+font-size: 10px;
+}
+h1.title {
+font-size: 38px;
+color: DarkRed;
+}
+h1 { /* Header 1 */
+font-size: 28px;
+color: DarkBlue;
+}
+h2 { /* Header 2 */
+font-size: 22px;
+color: DarkBlue;
+}
+h3 { /* Header 3 */
+font-size: 18px;
+color: DarkRed;
+}
+code.r{ /* Code block */
+font-size: 8px;
+}
+pre { /* Code block - determines code spacing between lines */
+font-size: 10px;
+}
+blockquote {
+font-size: 12px;
+border-left: 5px solid #eee;
+}
+</style>
+```
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, echo=FALSE, include=TRUE}
+# Me fijo si estos paquetes están instalados y si no, los instalo
+packages <- c("cowplot", "readr", "ggplot2", "dplyr", "lavaan", "Hmisc",
+              "tidyverse", "lubridate", "ggbeeswarm", "ggridges", "patchwork")
+
+if (length(setdiff(packages, rownames(installed.packages()))) > 0) {
+  install.packages(setdiff(packages, rownames(installed.packages())))
+}
+```
+
+## Descripción del ejercicio
+
+Este es un ejercicio de visualización de datos con un dataset de temperaturas diarias registradas en Argentina durante los últimos 365 días. Descargué el dataset de la página de datos públicos <https://datos.gob.ar> (más precisamente, en [este link](https://datos.gob.ar/dataset/smn-registro-temperatura-365-dias/archivo/smn_5.1)) el 5 de Septiembre de 2022. El archivo descargado (`Registro_temperaturas-05092022.zip`) contiene el dataset `registro_temperatura365d_smn.txt` que ahora está en la carpeta `datos` de este proyecto.
+
+El dataset incluye la temperatura mínima y la máxima de los últimos 365 días de distintas estaciones meteorológicas de Argentina. En la primera parte de este ejercicio, muestro tres formas diferentes de graficar las temperaturas de CABA agrupadas por mes. En la segunda parte, analizo las temperaturas de CABA y Mendoza. En principio, la correlación entre ambas. Luego, dado que Mendoza está más lejos del mar y a más altura, me pregunto si la amplitud térmica allí es mayor que en CABA.
+
+El ejercicio también sirve de ejemplo de uso de **RMarkdown** y diferentes paquetes que complementan a **ggplot2**. Por último, se guarda un gráfico en la carpeta `output`. Para aprender más sobre **RMarkdown**, pueden ver este libro de [Xie, Allaire y Grolemund](#ref).
+
+## Importo los datos
+
+Importo los datos, me quedo sólo con las tempearaturas registradas en Aeroparque (CABA) y agrego al dataset las variables temperatura promedio de cada día, el mes y el año.
+
+```{r message=FALSE, warning=FALSE}
+require(tidyverse)
+require(lubridate)
+
+d <- read_table2("datos/registro_temperatura365d_smn.txt", 
+                 col_types = cols(FECHA = col_datetime(format = "%d%m%Y"), 
+                                  TMAX = col_number(), 
+                                  TMIN = col_number()))
+
+
+d.CABA <- d %>% 
+  filter(NOMBRE == "AEROPARQUE") %>% 
+  select(1:3) %>% 
+  mutate(TMEAN = (TMIN+TMAX)/2,
+         MES = month(as.POSIXlt(FECHA, format="%d%m%Y")),
+         ANO = year(as.POSIXlt(FECHA, format="%d%m%Y")))
+
+
+# lo que sigue es medio chancho pero sirve poner en orden los meses (lo que 
+# queda de septiembre, octubre, noviembre y diciembre) en los gráficos que 
+# siguen. si se les ocurre una forma mejor, me avisan.
+
+d.CABA$MES[d.CABA$MES==12] <- 0 
+d.CABA$MES[d.CABA$MES==11] <- -1 
+d.CABA$MES[d.CABA$MES==10] <- -2
+d.CABA$MES[d.CABA$MES==9 & d.CABA$ANO==2021] <- -3
+
+d.CABA$MES <- as.factor(d.CABA$MES)
+
+d
+```
+
+## Ejemplo con el paquete ggbeeswarm {.tabset .tabset-fade}
+
+El paquete [**ggbeeswarm**](#ref) permite hacer gráficos de violin con scatter plots:
+
+> Beeswarm plots (aka column scatter plots or violin scatter plots) are a way of plotting points that would ordinarily overlap so that they fall next to each other instead. In addition to reducing overplotting, it helps visualize the density of the data at each point (similar to a violin plot), while still showing each data point individually.
+>
+> [ggbeeswarm](#ref)
+
+Más fácil verlo con un ejemplo...
+
+### Código
+
+```{r eval=TRUE, message=FALSE, warning=FALSE, include=TRUE}
+require(ggbeeswarm)
+l.meses <- c("sep 21", "oct 21", "nov 21", "dic 21", "ene 22", "feb 22","mar 22", 
+             "abr 22","may 22", "jun 22","jul 22", "ago 22","sep 22")
+
+g1 <- ggplot(data = d.CABA, mapping = aes(x = MES, y = TMEAN, color = TMEAN)) +
+  geom_quasirandom(size = 1) +
+  scale_color_viridis_c(option = "plasma") +
+  guides(color = "none") + 
+  labs(title = "Temperatura promedio en CABA", 
+       subtitle = "datos de los últimos 365 días", 
+       caption = "fecha: 5 Sep 2022") +
+  scale_x_discrete(name="",
+                   breaks=-3:9,
+                   labels=l.meses) + 
+  scale_y_continuous(name="Temperatura (°C)", 
+                     limits = c(5,35)) + 
+  theme_minimal() + 
+  coord_flip() +
+  theme(legend.position = "none",
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank())  
+```
+
+### Output {.active}
+
+```{r echo=FALSE, fig.height=5, fig.width=5, message=FALSE, warning=FALSE}
+g1
+```
+
+## Ejemplo con el paquete raincloudplots {.tabset .tabset-fade}
+
+Con el paquete [**raincloudplots**](#ref) se pueden crear lindas visualizaciones 
+de distribuciones que combinan un boxplot, un gráfico de la densidad y un scatter plot.
+
+### Código
+
+```{r eval=TRUE, message=FALSE, warning=FALSE, include=TRUE}
+require(cowplot)
+source('scripts/R_rainclouds.R')
+
+g2 <- ggplot(data = d.CABA, mapping = aes(x = MES, y = TMEAN, fill = MES)) + 
+  geom_flat_violin(position = position_nudge(x = .2, y = 0), 
+                   adjust = .8) +
+  geom_point(position = position_jitter(width = .05), 
+             size = .25) +
+  geom_boxplot(aes(x = as.numeric(MES)+0.25, y = TMEAN), 
+               position = position_nudge(x = -.12, y = 0), 
+               outlier.shape = NA, 
+               alpha = 0.3, 
+               width = .1, 
+               colour = "BLACK") +
+  labs(title = "Temperatura promedio en CABA", 
+       subtitle = "datos de los últimos 365 días", 
+       caption = "fecha: 5 Sep 2022") +
+  scale_x_discrete(name="",
+                   breaks=-3:9,
+                   labels=l.meses) + 
+  scale_y_continuous(name="Temperatura (°C)", 
+                     limits = c(5,35)) + 
+  theme_cowplot() +
+  coord_flip() +
+  theme(legend.position = "none",
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.border = element_blank(),
+        plot.title = element_text(face="plain"),
+        panel.background = element_blank())  
+
+
+```
+
+### Output {.active}
+
+```{r echo=FALSE, fig.height=7, fig.width=5, message=FALSE, warning=FALSE}
+g2
+```
+
+## Ejemplo con el paquete ggridges {.tabset .tabset-fade}
+
+[**ggridges**](#ref) es un paquete que puede servir para mostrar cambios en 
+las distribuciones. Por ejemplo, a lo largo del tiempo o en distintos lugares.
+
+### Código
+
+```{r eval=TRUE, message=FALSE, warning=FALSE, include=TRUE}
+require(ggridges)
+#require(forcats)
+
+d2 <- d.CABA %>% 
+  pivot_longer(cols = 2:3, values_to = "T", names_to = "TIPO")
+
+g3 <- ggplot(d2, aes(x = T, y = as_factor(MES), fill = TIPO)) +
+  geom_density_ridges(alpha = 0.5) +
+  scale_fill_discrete(name = "", 
+                      labels=c('Temp min.', 'Temp max.')) +
+  labs(x = "Temperatura (°C)", 
+       y = NULL, 
+       color = "Temp") +
+  scale_y_discrete(name="",
+                   breaks=-3:9,
+                   labels=l.meses) + 
+  labs(title = "Temperatura mínima y máxima en CABA", 
+       subtitle = "datos de los últimos 365 días", 
+       caption = "fecha: 5 Sep 2022") +
+  theme_minimal() + 
+  theme(panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.border = element_blank(),
+        panel.background = element_blank())
+
+```
+
+### Output {.active}
+
+```{r echo=FALSE, fig.height=7, fig.width=5, message=FALSE, warning=FALSE}
+g3
+```
+
+## Amplitud térmica en CABA vs Mendoza {.tabset .tabset-fade}
+
+La amplitud térmica de un día cualquiera $i$ es: $AT\_{i} = $T_{max(i)} - T_{min(i)}$.
+Estuve en Mendoza y a la noche hacía mucho frío y durante el día mucho calor. Supongo
+que por estar lejos del Atlántico. Voy a usar estos datos para buscar evidencia 
+sobre este tema.
+
+
+### Código
+
+```{r eval=TRUE, message=FALSE, warning=FALSE, include=TRUE}
+
+d2 <- d %>% 
+  filter(NOMBRE == "AEROPARQUE" | (NOMBRE == "MENDOZA" & X5 =="AERO") ) %>% 
+  select(1:4) %>% 
+  mutate(TMEAN = (TMIN+TMAX)/2,
+         AT = TMAX - TMIN,
+         MES = month(as.POSIXlt(FECHA, format="%d%m%Y")),
+         ANO = year(as.POSIXlt(FECHA, format="%d%m%Y")))
+
+g4 <- ggplot(data = d2, mapping = aes(x = NOMBRE, y = AT, fill = NOMBRE)) + 
+  geom_flat_violin(position = position_nudge(x = 0.1, y = 0), adjust = 2) +
+  geom_point(position = position_jitter(width = .05), size = .25) +
+  geom_boxplot(aes(x = NOMBRE, y = AT), 
+               outlier.shape = NA, 
+               alpha = 0.3, 
+               width = .1, 
+               colour = "BLACK") +
+  labs(title = "CABA vs. Mendoza", 
+       subtitle = "amplitud térmica de los últimos 365", 
+       caption = "fecha: 5 Sep 2022") +
+  scale_x_discrete(name="",
+                   labels=c("CABA", "Mendoza")) + 
+  scale_y_continuous(name="Amplitud Térmica (°C)", 
+                     limits = c(0,27)) + 
+  theme_cowplot() +
+  coord_flip() +
+  theme(legend.position = "none",
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor.x = element_blank(),
+        panel.border = element_blank(),
+        plot.title = element_text(face="plain"),
+        panel.background = element_blank())  
+
+```
+
+
+### Output {.active}
+
+```{r echo=FALSE, fig.height=5, fig.width=5, message=FALSE, warning=FALSE}
+g4
+```
+
+
+## Correlación de la temperatura CABA - Mendoza {.tabset .tabset-fade}
+
+Como último ejemplo, y para mostrar otro tipo de gráfico que podemos hacer, voy 
+a estudiar la asociación entre la temperatura media en CABA y Mendoza. Obviamente
+esperamos encontrar una correlación positiva. 
+
+### Código
+
+```{r eval=TRUE, message=FALSE, warning=FALSE, include=TRUE}
+
+d2 <- d %>% 
+  filter(NOMBRE == "AEROPARQUE" | (NOMBRE == "MENDOZA" & X5 =="AERO") ) %>% 
+  select(1:4) %>% 
+  mutate(TMEAN = (TMIN+TMAX)/2,
+         AT = TMAX - TMIN,
+         MES = month(as.POSIXlt(FECHA, format="%d%m%Y")),
+         ANO = year(as.POSIXlt(FECHA, format="%d%m%Y")))
+
+
+d2 <- d2 %>% 
+  select(c(1,4,5)) %>%  
+  pivot_wider(names_from = NOMBRE, values_from = TMEAN) %>% 
+  mutate(MES = month(as.POSIXlt(FECHA, format="%d%m%Y")))
+
+# voy a hacer un scatter plot pero el color de cada punto quiero que sea
+# diferente de acuerdo al mes. creo estos labels.
+l.meses <- c("ene", "feb","mar", 
+             "abr","may", "jun",
+             "jul", "ago","sep",
+             "oct", "nov","dec")
+
+g5 <- ggplot(data = d2, mapping = aes(x = AEROPARQUE, y = MENDOZA)) + 
+  geom_smooth(method = "lm", se = F) +
+  geom_point(aes(color = factor(MES))) +
+  labs(title = "Correlación de temperaturas en CABA - Mendoza", 
+       subtitle = "temperatura media de los últimos 365") +
+  scale_y_continuous(name="Temperatura media en MDZ (°C)", 
+                     limits = c(0,30)) + 
+  scale_x_continuous(name="Temperatura media en CABA (°C)", 
+                     limits = c(0,30)) +
+  scale_color_discrete(name = "", 
+                       labels=l.meses) +
+  theme_minimal() + 
+  theme(panel.border = element_blank(),
+        panel.background = element_blank())  
+
+```
+
+
+### Output {.active}
+
+```{r echo=FALSE, fig.height=5, fig.width=5, message=FALSE, warning=FALSE}
+g5
+```
+
+## Guardo figuras
+
+```{r message=FALSE, warning=FALSE}
+ggsave( "output/fig1.pdf", plot = g1)
+ggsave( "output/fig2.pdf", plot = g2)
+ggsave( "output/fig3.pdf", plot = g3)
+ggsave( "output/fig4.pdf", plot = g4)
+ggsave( "output/fig5.pdf", plot = g5)
+```
+
+
+## Referencias {#ref}
+
+-   R Markdown: The Definitive Guide. Yihui Xie, J. J. Allaire, Garrett Grolemund. (<https://bookdown.org/yihui/rmarkdown/>)
+-   [github.com/eclarke/ggbeeswarm](https://github.com/eclarke/ggbeeswarm)
+-   [github.com/RainCloudPlots/RainCloudPlots](https://github.com/RainCloudPlots/RainCloudPlots)
+-   [wilkelab.org/ggridges/](https://wilkelab.org/ggridges/)
+
+
+
+
+
